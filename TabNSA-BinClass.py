@@ -197,7 +197,7 @@ dataset_P = ['CB']
 seeds = np.random.randint(10, 1000, NUM_SEED)
 
 for DATA in dataset_P:
-    data = pd.read_csv("/home/data3/Ali/Code/KAN/Afzal/DATA/%s.csv" % DATA)
+    data = pd.read_csv("/your path directory/DATA/%s.csv" % DATA)
 
     results_AUC = []
     
