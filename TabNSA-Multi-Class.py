@@ -166,7 +166,7 @@ def objective(trial):
 
 DATA = 'ForestCovertype'
 
-data = arff.loadarff("/home/data3/Ali/Code/KAN/Multi-Class/%s.arff" % DATA)
+data = arff.loadarff("/your path directory/Multi-Class/%s.arff" % DATA)
 data = pd.DataFrame(data[0])
 
 target_column = data.columns[-1]
