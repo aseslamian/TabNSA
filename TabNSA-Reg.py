@@ -141,7 +141,7 @@ seed = 42
 # DATA = 'Moneyball'  # RSquared
 DATA = 'sarcos'  # V28
 
-data = arff.loadarff("/home/data3/Ali/Code/KAN/Regression/Dataset/%s.arff" % DATA)
+data = arff.loadarff("/your path directory/Dataset/%s.arff" % DATA)
 data = pd.DataFrame(data[0])
 
 data.fillna(0, inplace=True)
