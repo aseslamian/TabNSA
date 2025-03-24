@@ -194,7 +194,7 @@ model = SparseAttentionModel(input_shape, output_shape, dim_head, heads, sliding
 criterion = nn.MSELoss()
 
 optimizer = torch.optim.AdamW(model.parameters(), lr= learning_rate)
-history = fit(model, criterion, optimizer, X_test, y_test, epochs= EPOCHS, batch_size= batch_size, device='cuda')
+history = fit(model, criterion, optimizer, X_train, y_train, epochs= EPOCHS, batch_size= batch_size, device='cuda')
 
 y_pred = model(X_test).cpu().detach().numpy()
 y_true = y_test.cpu().detach().numpy()
