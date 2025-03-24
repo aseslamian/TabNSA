@@ -283,7 +283,7 @@ for DATA in dataset_P:
         model = SparseAttentionModel(input_shape, output_shape, dim_head, heads, sliding_window_size, compress_block_size, selection_block_size, num_selected_blocks).to(device)
         criterion = nn.CrossEntropyLoss()
         optimizer = torch.optim.AdamW(model.parameters(), lr= learning_rate)
-        history = fit(model, criterion, optimizer, X_test, y_test, epochs= EPOCHS, batch_size= batch_size, device='cuda')
+        history = fit(model, criterion, optimizer, X_train, y_train, epochs= EPOCHS, batch_size= batch_size, device='cuda')
 
         test_auc, test_accuracy = evaluate_model_auc(model, X_test, y_test, output_shape, device='cuda', batch_size= batch_size)
         results_AUC.append(test_auc)
