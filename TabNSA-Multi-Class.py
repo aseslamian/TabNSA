@@ -200,27 +200,27 @@ if y.dtype == "object":
 else:
     y = torch.tensor(y)
 
-X_train, X_test, y_train, y_test = train_test_split(X, y, stratify=y, test_size=0.2, random_state=42)
-X_train, X_valid, y_train, y_valid = train_test_split(X_train, y_train, stratify=y_train, test_size=0.1, random_state=42)
+X_temp, X_test, y_temp, y_test = train_test_split(X, y, stratify=y, test_size=0.2, random_state=seed)
+X_train, X_valid, y_train, y_valid = train_test_split(X_temp, y_temp, stratify=y_temp, test_size=0.1, random_state=seed)
 
 scaler = StandardScaler()
-# X_temp = torch.tensor(scaler.fit_transform(X_temp)).to(device)
+X_temp = torch.tensor(scaler.fit_transform(X_temp)).to(device)
 X_train = torch.tensor(scaler.fit_transform(X_train)).to(device)
 X_valid = torch.tensor(scaler.transform(X_valid)).to(device)
 X_test = torch.tensor(scaler.transform(X_test)).to(device)
 
-# y_temp = torch.nn.functional.one_hot(y_temp.long(), num_classes=7).to(device).float()
-y_train = torch.nn.functional.one_hot(y_train.long(), num_classes=7).to(device).float()
-y_valid = torch.nn.functional.one_hot(y_valid.long(), num_classes=7).to(device).float()
-y_test = torch.nn.functional.one_hot(y_test.long(), num_classes=7).to(device).float()
+y_temp = torch.nn.functional.one_hot(y_temp.long(), num_classes=2).to(device).float()
+y_train = torch.nn.functional.one_hot(y_train.long(), num_classes=2).to(device).float()
+y_valid = torch.nn.functional.one_hot(y_valid.long(), num_classes=2).to(device).float()
+y_test = torch.nn.functional.one_hot(y_test.long(), num_classes=2).to(device).float()
 
 input_shape = X_train.shape[1]
 output_shape = y_train.shape[1]
 
-# if output_shape > 1:
-#     y_train = y_train.argmax(dim=1)
-#     y_valid = y_valid.argmax(dim=1)
-#     y_test = y_test.argmax(dim=1)
+if output_shape > 1:
+    y_train = y_train.argmax(dim=1)
+    y_valid = y_valid.argmax(dim=1)
+    y_test = y_test.argmax(dim=1)
 
 # study = optuna.create_study(direction="maximize")
 # study.optimize(objective, n_trials=TRIALS)
@@ -260,7 +260,7 @@ if output_shape > 1:
 model = SparseAttentionModel(input_shape, output_shape, dim_head, heads, sliding_window_size, compress_block_size, selection_block_size, num_selected_blocks).to(device)
 criterion = nn.CrossEntropyLoss()
 optimizer = torch.optim.AdamW(model.parameters(), lr= learning_rate)
-history = fit(model, criterion, optimizer, X_train, y_train, epochs= EPOCHS, batch_size= batch_size, device='cuda')
+history = fit(model, criterion, optimizer, X_temp, y_temp, epochs= EPOCHS, batch_size= batch_size, device='cuda')
 
 auc_ovo, accuracy, f1 = evaluate_model_auc(model, X_test, y_test, output_shape)
 print(f"Test AUC-OVO: {auc_ovo:.4f}")
