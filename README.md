@@ -2,7 +2,7 @@
 
 This is the repository code for **"TabNSA: Native Sparse Attention for Efficient Tabular Data Learning"**.
 
-📄 **Paper**: [TabNSA: Native Sparse Attention for Efficient Tabular Data Learning](https://scholar.google.com/citations?view_op=view_citation&hl=en&user=aVxMP1sAAAAJ&citation_for_view=aVxMP1sAAAAJ:3fE2CSJIrl8C)
+📄 **Paper**: [TabNSA: Native Sparse Attention for Efficient Tabular Data Learning]([https://scholar.google.com/citations?view_op=view_citation&hl=en&user=aVxMP1sAAAAJ&citation_for_view=aVxMP1sAAAAJ:3fE2CSJIrl8C](https://arxiv.org/abs/2503.09850))
 
 ## 📦 Overview
 
