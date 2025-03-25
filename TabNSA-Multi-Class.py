@@ -240,23 +240,6 @@ num_selected_blocks= best_params["num_selected_blocks"]
 learning_rate = best_params["learning_rate"]
 batch_size = best_params["batch_size"]
 
-# scaler = StandardScaler()
-# X_train = torch.tensor(scaler.fit_transform(X_train)).to(device)
-# # X_valid = torch.tensor(scaler.transform(X_valid)).to(device)
-# X_test = torch.tensor(scaler.transform(X_test)).to(device)
-
-# y_train = torch.nn.functional.one_hot(y_train.long(), num_classes=7).to(device).float()
-# # y_valid = torch.nn.functional.one_hot(y_valid.long(), num_classes=2).to(device).float()
-# y_test = torch.nn.functional.one_hot(y_test.long(), num_classes=7).to(device).float()
-
-input_shape = X_train.shape[1]
-output_shape = y_train.shape[1]
-
-if output_shape > 1:
-    y_train = y_train.argmax(dim=1)
-    # y_valid = y_valid.argmax(dim=1)
-    y_test = y_test.argmax(dim=1)
-
 model = SparseAttentionModel(input_shape, output_shape, dim_head, heads, sliding_window_size, compress_block_size, selection_block_size, num_selected_blocks).to(device)
 criterion = nn.CrossEntropyLoss()
 optimizer = torch.optim.AdamW(model.parameters(), lr= learning_rate)
