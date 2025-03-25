@@ -22,15 +22,14 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 TRIALS = 10
 EPOCHS = 100
-NUM_SEED = 10
+NUM_SEED = 50
 # BATCH_SIZE = 64
 
 ################################################################################################################
+
 def fit(model, criterion, optimizer, X_train, y_train, epochs=10, batch_size=32, device='cuda'):
+    history = {'train_loss': []}
     
-    history = {'train_loss': [], 'val_loss': []}
-    # print ("Batch size: ", batch_size)
-    # Convert to float32 once and move to device
     X_train, y_train = X_train.float().to(device), y_train.to(device)
 
     train_dataset = TensorDataset(X_train, y_train)
@@ -39,7 +38,6 @@ def fit(model, criterion, optimizer, X_train, y_train, epochs=10, batch_size=32,
     model.to(device)
     
     for epoch in range(epochs):
-        
         model.train()
         epoch_train_loss = 0.0
         
@@ -47,54 +45,19 @@ def fit(model, criterion, optimizer, X_train, y_train, epochs=10, batch_size=32,
             x_batch, y_batch = x_batch.to(device), y_batch.to(device)
 
             optimizer.zero_grad()
-            outputs = model(x_batch)
-            loss = criterion(outputs, y_batch)
-
-            # with torch.autograd.detect_anomaly():
-            loss.backward()
+            
+            with torch.autograd.detect_anomaly():  # Enable anomaly detection
+                outputs = model(x_batch)
+                loss = criterion(outputs, y_batch)
+                loss.backward()  # Detects any invalid gradients
+            
             optimizer.step()
             epoch_train_loss += loss.item() * x_batch.size(0)
 
-        # Calculate epoch metrics
         train_loss = epoch_train_loss / len(train_loader.dataset)
         history['train_loss'].append(train_loss)
-        
-        # print(f'Epoch {epoch+1}/{epochs}')
-    
+
     return history
-
-# def fit(model, criterion, optimizer, X_train, y_train, epochs=10, batch_size=32, device='cuda'):
-#     history = {'train_loss': []}
-    
-#     X_train, y_train = X_train.float().to(device), y_train.to(device)
-
-#     train_dataset = TensorDataset(X_train, y_train)
-#     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-
-#     model.to(device)
-    
-#     for epoch in range(epochs):
-#         model.train()
-#         epoch_train_loss = 0.0
-        
-#         for x_batch, y_batch in train_loader:
-#             x_batch, y_batch = x_batch.to(device), y_batch.to(device)
-
-#             optimizer.zero_grad()
-            
-#             with torch.autograd.detect_anomaly():  # Enable anomaly detection
-#                 outputs = model(x_batch)
-#                 loss = criterion(outputs, y_batch)
-#                 loss.backward()  # Detects any invalid gradients
-            
-#             optimizer.step()
-#             epoch_train_loss += loss.item() * x_batch.size(0)
-
-#         train_loss = epoch_train_loss / len(train_loader.dataset)
-#         history['train_loss'].append(train_loss)
-
-#     return history
-
 ################################################################################################################
 
 class SparseAttentionModel(nn.Module):
@@ -133,6 +96,7 @@ class SparseAttentionModel(nn.Module):
         x = self.attention(x)  # (batch, num_features, dim)
         x = x.mean(dim=1)  # (batch, dim)
         return self.head(x)
+    
 ################################################################################################################
 
 def evaluate_model_auc(model, X_test, y_test, output_shape, device='cuda', batch_size=64):
@@ -164,7 +128,10 @@ def evaluate_model_auc(model, X_test, y_test, output_shape, device='cuda', batch
     test_auc = roc_auc_score(test_labels.numpy(), test_probabilities.numpy())    
     test_predictions = (test_probabilities > 0.5).long()
     test_accuracy = (test_predictions == test_labels).float().mean().item()
-      
+    
+    # print(f'Test AUC: {test_auc:.4f}')
+    # print(f'Test Accuracy: {test_accuracy * 100:.2f}%')
+    
     return test_auc, test_accuracy
 ################################################################################################################
 def objective(trial):
@@ -189,16 +156,16 @@ def objective(trial):
 
     return test_auc
 ################################################################################################################
+dataset_P = ['CG','CA', 'DS','AD', 'CB', 'BL', 'IO' , 'IC']
 
-# dataset_P = ['AD', 'BL', 'CA', 'CB', 'CG', 'DS', 'IC', 'IO']
-
-dataset_P = ['CB']
+print("Dataset: ", dataset_P)
 
 seeds = np.random.randint(10, 1000, NUM_SEED)
 
 for DATA in dataset_P:
-    data = pd.read_csv("/your path directory/DATA/%s.csv" % DATA)
-
+    
+    data = pd.read_csv("/path to the dataset/DATA/%s.csv" % DATA) 
+    
     results_AUC = []
     
     data.fillna(0, inplace=True)
@@ -212,47 +179,8 @@ for DATA in dataset_P:
     else:
         y = torch.tensor(y)
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y, stratify=y, test_size=0.2, random_state=42)
-    X_train, X_valid, y_train, y_valid = train_test_split(X_train, y_train, stratify=y_train, test_size=0.1, random_state=42)
-
-    scaler = StandardScaler()
-    X_train = torch.tensor(scaler.fit_transform(X_train)).to(device)
-    X_valid = torch.tensor(scaler.transform(X_valid)).to(device)
-    X_test = torch.tensor(scaler.transform(X_test)).to(device)
-
-    y_train = torch.nn.functional.one_hot(y_train.long(), num_classes=2).to(device).float()
-    y_valid = torch.nn.functional.one_hot(y_valid.long(), num_classes=2).to(device).float()
-    y_test = torch.nn.functional.one_hot(y_test.long(), num_classes=2).to(device).float()
-
-    input_shape = X_train.shape[1]
-    output_shape = y_train.shape[1]
-
-    if output_shape > 1:
-        y_train = y_train.argmax(dim=1)
-        y_valid = y_valid.argmax(dim=1)
-        y_test = y_test.argmax(dim=1)
-
-    # study = optuna.create_study(direction="maximize")
-    # study.optimize(objective, n_trials=TRIALS)
-    # best_params = study.best_params
-    
-    # Tresults = study.trials_dataframe()
-    # Tresults.to_csv('results-NSA-%s-%s.csv' % (DATA, datetime.now()))
-    
-    # best_params = {'dim': 160, 'dim_head': 32, 'heads': 6, 'sliding_window_size': 7, 'compress_block_size': 16, 'selection_block_size': 8, 'num_selected_blocks': 2, 'learning_rate': 0.0002104037136418331, 'batch_size': 64}
-    best_params = {'dim': 32, 'dim_head': 40, 'heads': 5, 'sliding_window_size': 2, 'compress_block_size': 4, 'selection_block_size': 16, 'num_selected_blocks': 1, 'learning_rate': 3.34470782781812e-05, 'batch_size': 32}
-
-    
-    dim_head= best_params["dim_head"]
-    heads= best_params["heads"]
-    sliding_window_size= best_params["sliding_window_size"]
-    compress_block_size= best_params["compress_block_size"]
-    selection_block_size= best_params["selection_block_size"]
-    num_selected_blocks= best_params["num_selected_blocks"]
-    learning_rate = best_params["learning_rate"]
-    batch_size = best_params["batch_size"]
-    
     for seed in seeds:
+        
         torch.manual_seed(seed)
         torch.cuda.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
@@ -260,30 +188,48 @@ for DATA in dataset_P:
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
         
-        X_train, X_test, y_train, y_test = train_test_split(X, y, stratify=y, test_size=0.2, random_state=42)
-        X_train, X_valid, y_train, y_valid = train_test_split(X_train, y_train, stratify=y_train, test_size=0.1, random_state=42)
-
+        X_temp, X_test, y_temp, y_test = train_test_split(X, y, stratify=y, test_size=0.2, random_state=seed)
+        X_train, X_valid, y_train, y_valid = train_test_split(X_temp, y_temp, stratify=y_temp, test_size=0.1, random_state=seed)
+        
         scaler = StandardScaler()
+        X_temp = torch.tensor(scaler.fit_transform(X_temp)).to(device)
         X_train = torch.tensor(scaler.fit_transform(X_train)).to(device)
-        # X_valid = torch.tensor(scaler.transform(X_valid)).to(device)
+        X_valid = torch.tensor(scaler.transform(X_valid)).to(device)
         X_test = torch.tensor(scaler.transform(X_test)).to(device)
 
+        y_temp = torch.nn.functional.one_hot(y_temp.long(), num_classes=2).to(device).float()
         y_train = torch.nn.functional.one_hot(y_train.long(), num_classes=2).to(device).float()
-        # y_valid = torch.nn.functional.one_hot(y_valid.long(), num_classes=2).to(device).float()
+        y_valid = torch.nn.functional.one_hot(y_valid.long(), num_classes=2).to(device).float()
         y_test = torch.nn.functional.one_hot(y_test.long(), num_classes=2).to(device).float()
-
+        
         input_shape = X_train.shape[1]
         output_shape = y_train.shape[1]
 
         if output_shape > 1:
             y_train = y_train.argmax(dim=1)
-            # y_valid = y_valid.argmax(dim=1)
+            y_valid = y_valid.argmax(dim=1)
             y_test = y_test.argmax(dim=1)
 
+        study = optuna.create_study(direction="maximize")
+        study.optimize(objective, n_trials=TRIALS)
+        best_params = study.best_params
+        
+        # Tresults = study.trials_dataframe()
+        # Tresults.to_csv('results-NSA-%s-%s.csv' % (DATA, datetime.now()))
+        
+        dim_head= best_params["dim_head"]
+        heads= best_params["heads"]
+        sliding_window_size= best_params["sliding_window_size"]
+        compress_block_size= best_params["compress_block_size"]
+        selection_block_size= best_params["selection_block_size"]
+        num_selected_blocks= best_params["num_selected_blocks"]
+        learning_rate = best_params["learning_rate"]
+        batch_size = best_params["batch_size"]
+        
         model = SparseAttentionModel(input_shape, output_shape, dim_head, heads, sliding_window_size, compress_block_size, selection_block_size, num_selected_blocks).to(device)
         criterion = nn.CrossEntropyLoss()
         optimizer = torch.optim.AdamW(model.parameters(), lr= learning_rate)
-        history = fit(model, criterion, optimizer, X_train, y_train, epochs= EPOCHS, batch_size= batch_size, device='cuda')
+        history = fit(model, criterion, optimizer, X_temp, y_temp, epochs= EPOCHS, batch_size= batch_size, device='cuda')
 
         test_auc, test_accuracy = evaluate_model_auc(model, X_test, y_test, output_shape, device='cuda', batch_size= batch_size)
         results_AUC.append(test_auc)
