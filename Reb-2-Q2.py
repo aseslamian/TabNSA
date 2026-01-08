@@ -5,6 +5,8 @@
 # It use TabNSA (NSA+TabMixer) parallelly
 # It combine the objective function used for TabNSA github code
 
+from __future__ import annotations
+
 import numpy as np
 import pandas as pd
 import torch
@@ -12,7 +14,9 @@ from sklearn.metrics import classification_report, f1_score, roc_auc_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 import torch.nn as nn
-from scipy.io import arff
+import os
+from typing import Tuple
+
 from native_sparse_attention_pytorch import SparseAttention
 from torch.utils.data import DataLoader, TensorDataset 
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score, root_mean_squared_error
@@ -27,7 +31,17 @@ NUM_SEED = 10
 # BATCH_SIZE = 64
 seed = 42
 ############################################################################################################
-def evaluate_model_auc(model, X_test, y_test, output_shape, device='cuda', batch_size=64):
+def seed_everything(seed_value: int) -> None:
+    torch.manual_seed(seed_value)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed_value)
+        torch.cuda.manual_seed_all(seed_value)
+    np.random.seed(seed_value)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+
+def evaluate_model_auc(model, X_test, y_test, num_classes, device='cuda', batch_size=64):
         
     # Create test dataset and loader
     test_dataset = TensorDataset(X_test, y_test)
@@ -44,8 +58,7 @@ def evaluate_model_auc(model, X_test, y_test, output_shape, device='cuda', batch
             batch_X, batch_y = batch_X.to(device), batch_y.to(device)
             outputs = model(batch_X)
             
-            # Compute probabilities (for binary classification, probability for class 1)
-            probabilities = torch.softmax(outputs, dim=1)[:, 1] if output_shape > 1 else outputs.squeeze()
+            probabilities = torch.softmax(outputs, dim=1)
             all_probabilities.append(probabilities.cpu())
             all_labels.append(batch_y.cpu())
     
@@ -53,13 +66,17 @@ def evaluate_model_auc(model, X_test, y_test, output_shape, device='cuda', batch
     test_labels = torch.cat(all_labels)
     
     # Calculate metrics
-    test_auc = roc_auc_score(test_labels.numpy(), test_probabilities.numpy())    
-    test_predictions = (test_probabilities > 0.5).long()
-    # test_accuracy = (test_predictions == test_labels).float().mean().item()
-    
-    # print(f'Test AUC: {test_auc:.4f}')
-    # print(f'Test Accuracy: {test_accuracy * 100:.2f}%')
-    
+    if num_classes == 2:
+        test_auc = roc_auc_score(test_labels.numpy(), test_probabilities.numpy()[:, 1])
+    else:
+        test_auc = roc_auc_score(
+            test_labels.numpy(),
+            test_probabilities.numpy(),
+            multi_class="ovr",
+            average="macro",
+            labels=list(range(num_classes)),
+        )
+
     return test_auc
 ############################################################################################################
 def fit(model, criterion, optimizer, X_train, y_train, epochs=10, batch_size=32, device='cuda'):
@@ -96,11 +113,11 @@ def fit(model, criterion, optimizer, X_train, y_train, epochs=10, batch_size=32,
     return history
 ############################################################################################################
 class TabNSA(nn.Module):
-    def __init__(self, input_shape, output_shape, dim_head, heads, sliding_window_size, 
+    def __init__(self, input_shape, output_shape, dim, dim_head, heads, sliding_window_size, 
                  compress_block_size, selection_block_size, num_selected_blocks):
         super().__init__()
         
-        self.dim = NUM_TOKENS
+        self.dim = dim
         self.feature_embedding = nn.Linear(1, self.dim)
 
         self.attn = SparseAttention(
@@ -115,7 +132,7 @@ class TabNSA(nn.Module):
         )
 
         self.tabmixer = TabMixer(
-            dim_tokens=NUM_FEATURES,       
+            dim_tokens=input_shape,       
             dim_features=self.dim,    
             dim_feedforward=256 
         )
@@ -123,12 +140,10 @@ class TabNSA(nn.Module):
         self.head = nn.Sequential(
             nn.Linear(self.dim, 32),
             nn.GELU(),
-            nn.Linear(32, NUM_CLASSES)
+            nn.Linear(32, output_shape)
         )
 
     def forward(self, x):
-        batch_size = x.shape[0]
-        
         x = x.unsqueeze(-1)
         x = self.feature_embedding(x)
         x_1 = self.attn(x)
@@ -153,7 +168,7 @@ def objective(trial):
     # dropout_rate = trial.suggest_float("dropout_rate", 0.1, 0.5)
     batch_size = trial.suggest_int("batch_size", 32, 128, step=32)
 
-    model = TabNSA(input_shape, output_shape, dim_head, heads, sliding_window_size, compress_block_size, selection_block_size, num_selected_blocks)
+    model = TabNSA(input_shape, output_shape, dim, dim_head, heads, sliding_window_size, compress_block_size, selection_block_size, num_selected_blocks)
     if torch.cuda.device_count() > 1:
         model = nn.DataParallel(model)
     model = model.to(device)
@@ -162,9 +177,9 @@ def objective(trial):
     # optimizer = torch.optim.AdamW(model.parameters(), lr= learning_rate)
     # history = fit(model, criterion, optimizer, X_train, y_train, epochs= EPOCHS, batch_size= batch_size, device='cuda')
     
-    criterion = nn.CrossEntropyLoss() if output_shape > 1 else nn.MSELoss()
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
-    history = fit(model, criterion, optimizer, X_train, y_train, epochs= EPOCHS, batch_size= BATCH_SIZE, device='cuda')
+    criterion = nn.CrossEntropyLoss()
+    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
+    history = fit(model, criterion, optimizer, X_train, y_train, epochs= EPOCHS, batch_size=batch_size, device=device)
 
     
     # y_pred = model(X_valid).cpu().detach().numpy()
@@ -174,7 +189,8 @@ def objective(trial):
     # r2  = r2_score(y_true, y_pred)
     # combined_objective = mse + 100 * abs(r2 - 1)
     
-    test_auc = evaluate_model_auc(model, X_test, y_test, output_shape, device='cuda', batch_size= batch_size)
+    # objective should use validation to avoid test leakage
+    test_auc = evaluate_model_auc(model, X_valid, y_valid, output_shape, device=device, batch_size=batch_size)
     
     return test_auc
 ################################################################################################################
@@ -200,7 +216,14 @@ dataset_P = ['AD', 'BL', 'CA', 'CB', 'CG', 'DS', 'IC', 'IO']
 DATA = dataset_P[3]
 print(DATA)
 
-data = pd.read_csv("/home/data3/Ali/Code/KAN/Afzal/DATA/%s.csv" % DATA) 
+_default_csv = f"./data/{DATA}.csv"
+csv_path = os.environ.get("TABNSA_DATA_CSV", _default_csv)
+if not os.path.exists(csv_path):
+    raise FileNotFoundError(
+        f"Dataset CSV not found at {csv_path!r}. "
+        f"Set TABNSA_DATA_CSV to your dataset path (expects a 'target_label' column)."
+    )
+data = pd.read_csv(csv_path)
 data.fillna(0, inplace=True)
 y = data["target_label"].values
 data.drop("target_label", axis=1, inplace=True)
@@ -208,9 +231,9 @@ X = data.values.astype(np.float32)
 
 if y.dtype == "object":
     label_encoder = LabelEncoder()
-    y = torch.tensor(label_encoder.fit_transform(y))
+    y = torch.tensor(label_encoder.fit_transform(y), dtype=torch.long)
 else:
-    y = torch.tensor(y)
+    y = torch.tensor(y, dtype=torch.long)
 
 X_train, X_test, y_train, y_test = train_test_split(X, y, stratify=y, test_size=0.2, random_state=42)
 X_train, X_valid, y_train, y_valid = train_test_split(X_train, y_train, stratify=y_train, test_size=0.1, random_state=42)
@@ -226,19 +249,17 @@ X_test = torch.tensor(scaler.transform(X_test)).to(device)
 # y_valid = torch.tensor(y_valid).to(device).float().view(-1, 1)
 # y_test = torch.tensor(y_test).to(device).float().view(-1, 1)
 
-y_train = y_train.detach().clone().to(device).float().view(-1, 1)
-y_valid = y_valid.detach().clone().to(device).float().view(-1, 1)
-y_test  = y_test.detach().clone().to(device).float().view(-1, 1)
+y_train = y_train.detach().clone().to(device).long().view(-1)
+y_valid = y_valid.detach().clone().to(device).long().view(-1)
+y_test  = y_test.detach().clone().to(device).long().view(-1)
 
 
 input_shape = X_train.shape[1]
-output_shape = 1  # Regression
+output_shape = int(torch.unique(y_train).numel())  # number of classes
 
 EPOCHS = 50
 NUM_TOKENS = 64
 BATCH_SIZE = 32
-NUM_FEATURES = input_shape
-NUM_CLASSES = output_shape
 
 # study = optuna.create_study(direction="maximize")
 # study.optimize(objective, n_trials=TRIALS)
@@ -247,6 +268,7 @@ NUM_CLASSES = output_shape
 best_params = {'dim': 64, 'dim_head': 64, 'heads': 8, 'sliding_window_size': 2, 'compress_block_size': 4, 
                'selection_block_size': 4, 'compress_block_sliding_stride': 2, 'num_selected_blocks': 2, 'learning_rate': 8.34869727747217e-05, 'batch_size': 96}
 
+dim = best_params.get("dim", NUM_TOKENS)
 dim_head= best_params["dim_head"]
 heads= best_params["heads"]
 sliding_window_size= best_params["sliding_window_size"]
@@ -258,23 +280,18 @@ compress_block_sliding_stride = 2
 batch_size = best_params["batch_size"]
 
 
-torch.manual_seed(seed)
-torch.cuda.manual_seed(seed)
-torch.cuda.manual_seed_all(seed)
-np.random.seed(seed)
-torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = False
+seed_everything(seed)
 
 
 # model = SparseAttentionModel(input_shape, output_shape, dim_head, heads, sliding_window_size, compress_block_size, selection_block_size, num_selected_blocks).to(device)
 # criterion = nn.CrossEntropyLoss()
 
-model = TabNSA(input_shape, output_shape, dim_head, heads, sliding_window_size, compress_block_size, selection_block_size, num_selected_blocks)
+model = TabNSA(input_shape, output_shape, dim, dim_head, heads, sliding_window_size, compress_block_size, selection_block_size, num_selected_blocks)
 if torch.cuda.device_count() > 1:
     model = nn.DataParallel(model)
 model = model.to(device)
 
-criterion = nn.CrossEntropyLoss() if output_shape > 1 else nn.MSELoss()
+criterion = nn.CrossEntropyLoss()
 optimizer = torch.optim.AdamW(model.parameters(), lr= learning_rate)
 
 def to_numpy(x):
@@ -301,6 +318,7 @@ def run_experiment(X_train_used, X_test_used, label):
         model = TabNSA(
             input_shape,
             output_shape,
+            dim,
             dim_head,
             heads,
             sliding_window_size,
@@ -313,7 +331,7 @@ def run_experiment(X_train_used, X_test_used, label):
             model = nn.DataParallel(model)
 
         optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
-        criterion = nn.CrossEntropyLoss() if output_shape > 1 else nn.MSELoss()
+        criterion = nn.CrossEntropyLoss()
 
         fit(
             model,
@@ -337,7 +355,7 @@ def run_experiment(X_train_used, X_test_used, label):
         # results.append([mse, mae, rmse, r2])
         # print(f"  MSE={mse:.4f}, MAE={mae:.4f}, RMSE={rmse:.4f}, R2={r2:.4f}")
         
-        test_auc = evaluate_model_auc(model, X_test_used, y_test, output_shape, device='cuda', batch_size= batch_size)
+        test_auc = evaluate_model_auc(model, X_test_used, y_test, output_shape, device=device, batch_size=batch_size)
         results.append([test_auc])
         print(f"  AUC={test_auc:.4f}")
 
