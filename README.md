@@ -1,8 +1,9 @@
-# TabNSA
+# TabNSA: Native sparse attention for efficient tabular data learning
 
-This is the repository code for **"TabNSA: Native Sparse Attention for Efficient Tabular Data Learning"**.
+Welcome to the repository for **"TabNSA: Native sparse attention for efficient tabular data learning"**.  
 
-📄 **Paper**: [TabNSA: Native Sparse Attention for Efficient Tabular Data Learning](https://arxiv.org/abs/2503.09850)
+*Paper Acceptance 🎉*: This work has been accepted for publication in **Journal of Neurocomputing**.
+**Paper**: [TabNSA: Native Sparse Attention for Efficient Tabular Data Learning](https://doi.org/10.1016/j.neucom.2026.132928)
 
 ## Overview
 
