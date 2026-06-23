@@ -22,3 +22,20 @@ TabNSA introduces a native sparse attention mechanism tailored for tabular data.
 git clone https://github.com/yourusername/TabNSA.git
 cd TabNSA
 pip install -r requirements.txt
+```
+
+---
+## Citation
+
+If you use this code or reference our study in your work, please cite:
+
+```bibtex
+@article{eslamian2026tabnsa,
+  title={TabNSA: Native sparse attention for efficient tabular data learning},
+  author={Eslamian, Ali and Cheng, Qiang},
+  journal={Neurocomputing},
+  pages={132928},
+  year={2026},
+  publisher={Elsevier}
+}
+```
